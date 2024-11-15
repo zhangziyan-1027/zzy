@@ -1,0 +1,47 @@
+name: build and deploy on production
+on:
+  pull_request:		      
+    types: closed
+    branches:
+      - main		      
+env:
+  VERSION: main-1.0.0		    
+jobs:
+  build:				
+    runs-on: runner_on_habor
+    steps:
+      - name: checkout on main			      
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: package app		  
+        run: mvn clean package
+
+      - name: build image		      
+        run: docker build -t demo-app:$VERSION .
+
+      - name: tag iamge for push	      
+        run: docker tag demo-app:$VERSION harbor.mydomain.com/myproject/demo-app:$VERSION
+
+      - name: login harbor before push	      
+        run: echo ${{ secrets.HARBOR_PASS }} | docker login harbor.mydomain.com --username ${{ secrets.HARBOR_USER }} --password-stdin
+
+      - name: push image to harbor	      
+        run: docker push harbor.mydomain.com/myproject/demo-app:$VERSION
+
+  production:			      
+    runs-on: production	      
+    needs: build			    
+    steps:
+      - name: checkout on main		      
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: create or update resources on K8S	      
+        run: kubectl apply -f deploy/demo-app.yml
+
+      - name: make container image is the latest version
+        run: kubectl set image deployments/demo-app *=harbor.mydomain.com/myproject/demo-app:$VERSION	  
+
